@@ -1,7 +1,15 @@
 package com.imooc.food.orderservicemanager.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.imooc.food.orderservicemanager.dao.OrderDetailDao;
+import com.imooc.food.orderservicemanager.dto.OrderMessageDTO;
+import com.imooc.food.orderservicemanager.enummeration.OrderStatus;
+import com.imooc.food.orderservicemanager.po.OrderDetailPO;
 import com.rabbitmq.client.*;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * @description: 消息处理相关业务逻辑
@@ -9,7 +17,13 @@ import lombok.SneakyThrows;
  * @author: liwenhui
  * @createTime: 2022-08-22 20:13
  **/
+@Slf4j
 public class MyOrderMessageService {
+
+    @Autowired
+    private OrderDetailDao orderDetailDao;
+
+    ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 声明消息队列、交换机、绑定、消息的处理
@@ -43,8 +57,51 @@ public class MyOrderMessageService {
         }
     }
 
-    public static void main(String[] args) {
+    DeliverCallback deliverCallback = (consumerTag, message) -> {
+        String messageBody = new String(message.getBody());
+        ConnectionFactory connectionFactory = new ConnectionFactory();
+        connectionFactory.setHost("myhost");
 
-    }
+        try {
+            OrderMessageDTO orderMessageDTO = objectMapper.readValue(messageBody, OrderMessageDTO.class);
+
+            OrderDetailPO orderDetailPO = orderDetailDao.selectOrder(orderMessageDTO.getOrderId());
+            switch (orderDetailPO.getStatus()) {
+
+                case ORDER_CREATING:
+                    //订单被确认，并且价格被商家赋值了
+                    if (orderMessageDTO.getConfirmed() && null != orderMessageDTO.getPrice()) {
+                        orderDetailPO.setStatus(OrderStatus.RESTAURANT_CONFIRMED);
+                        orderDetailPO.setPrice(orderDetailPO.getPrice());
+                        orderDetailDao.update(orderDetailPO);
+                        //发送商家处理好的订单消息给骑手微服务
+                        try (Connection connection = connectionFactory.newConnection();
+                             Channel channel = connection.createChannel()) {
+                            String messageToSend = objectMapper.writeValueAsString(orderMessageDTO);
+                            channel.basicPublish("exchange.order.deliveryman",
+                                    "key.deliveryman", null, messageToSend.getBytes());
+                        }
+                    } else {
+                        //订单失败
+                        orderDetailPO.setStatus(OrderStatus.FAILED);
+                        orderDetailDao.update(orderDetailPO);
+                    }
+                    break;
+                case RESTAURANT_CONFIRMED:
+                    break;
+                case DELIVERYMAN_CONFIRMED:
+                    break;
+                case SETTLEMENT_CONFIRMED:
+                    break;
+                case ORDER_CREATED:
+                    break;
+                case FAILED:
+                    break;
+            }
+        } catch (Exception e) {
+            log.error("",e);
+        }
+    };
+
 
 }
