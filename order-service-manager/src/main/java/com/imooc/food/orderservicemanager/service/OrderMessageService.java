@@ -20,6 +20,9 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.concurrent.TimeoutException;
 
+/**
+ * 消息处理相关业务逻辑
+ */
 @Slf4j
 @Service
 public class OrderMessageService {

@@ -19,6 +19,9 @@ import java.io.IOException;
 import java.util.Date;
 import java.util.concurrent.TimeoutException;
 
+/**
+ * 处理用户相关的信息
+ */
 @Slf4j
 @Service
 public class OrderService {
